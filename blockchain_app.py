@@ -2,8 +2,10 @@ from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
 import qrcode
 import os
+import random
 import json
 import uuid
+import energyusage
 import hashlib
 import base64
 import time
@@ -571,12 +573,14 @@ class Node:
 
 
 class Miner(Node):
-    def __init__(self, chain: BlockChain, network: Network):
+    def __init__(self, chain: BlockChain, network: Network, attempt_time=0):
         super().__init__(chain=chain, network=network)
 
         self.mine_flag = True
         self.start_hash = "1" * self.chain.difficulty
         self.success_string = "0" * self.chain.difficulty
+
+        self.attempt_time = attempt_time
 
     def hashStr(self, s):
         sha = hashlib.sha256()
@@ -598,24 +602,30 @@ class Miner(Node):
         """
         if len(self.network.broadcast_blocks) != 0:
             return self.network.broadcast_blocks[-1].nonce
-        return 0
+        return self.chain.blocks[0].nonce
 
-    def mine(self, attempts: int = None):
+    def mine(self, attempts: int = None, track=False):
         """
         mines continuously untill attemts reached
+        :param track:
         :param attempts: number of rounds to attempt to mine for
         :return:
         """
+
         while self.mine_flag:
             previous_proof = self.getPreviousProof()
-            self.POW(previous_proof=previous_proof)
+            if track:
+                hashes_computed, time_taken = self.POW(previous_proof=previous_proof, track_hashes=track, time_limmit=float(3600))
+                return time_taken, hashes_computed
+            else:
+                self.POW(previous_proof=previous_proof, track_hashes=track)
 
             if attempts is not None:
                 attempts -= 1
                 if attempts == 0:
                     self.mine_flag = False
 
-    def POW(self, previous_proof):
+    def POW(self, previous_proof, track_hashes=False, time_limmit=None):
         """
         performs proof of work.
         attempts to mine the next block
@@ -623,21 +633,33 @@ class Miner(Node):
             creates, broadcasts and appends block to chain
         otherwise:
             validates the successful broadcast block
+        :param track_hashes: bool to turn the method to just return the number of hashes nessaiiryt o find valid proof
         :param previous_proof: the nonce found in the previous block
         :return:
         """
+        start_time = time.perf_counter()
+
         current_blocks_mined = self.network.blocks_minned
 
         current_hash = self.start_hash
         proof = 0
 
+        hash_numer = 0
         while (current_hash[:self.chain.difficulty] != self.success_string) and (
-                self.network.blocks_minned == current_blocks_mined):
+                self.network.blocks_minned == current_blocks_mined) and (time.perf_counter()-start_time<time_limmit):
+            hash_numer += 1
             proof += 1
             current_hash = self.chain.hashProofs(current_proof=proof, previous_proof=previous_proof)
 
+        if time.perf_counter() - start_time > time_limmit:
+            return hash_numer, -1
+
         if current_hash[:self.chain.difficulty] == self.success_string and not (
                 self.network.blocks_minned != current_blocks_mined):
+
+            if track_hashes:
+                return hash_numer, time.perf_counter() - start_time
+
             # we have a winning proof
             # need to create our new block and broadcast it
             self.network.blocks_minned += 1
@@ -655,6 +677,8 @@ class Miner(Node):
             accepted = self.addBlock(new_block)
             if not accepted:
                 print("ERROR - self mined block not accepted")
+            else:
+                print(current_hash)
 
             self.blocks_mined.append(new_block)
             time.sleep(1)
@@ -730,11 +754,59 @@ def q_3b():
 
     return results
 
+
+def q4_a():
+    results = [[-1 for i in range(10)] for j in range(20)]
+
+    for lz in range(1, 20):
+        network = Network()
+        bc = BlockChain(previous_chain=None, difficulty=lz, block_length=99)
+
+        #setup
+
+        client_a = Client(name="Alice", network=network)
+        client_b = Client(name="Bob", network=network)
+        client_a.balence = 100
+        item_to_send = Item(random.randint(1,100))
+        client_a.sendTransaction(receiver=client_b.key_pair.public_key_str,
+                                 inputs=[item_to_send],
+                                 outputs=[item_to_send])
+
+
+
+
+        #analysis bit
+
+        continue_calc = True
+        for i in range(5):
+            if continue_calc:
+
+                # randomise the nonces so that have different proof starting points
+                bc.blocks[0].nonce = random.randint(1, 100)
+                node_a = Miner(chain=bc, network=network)
+                node_a.receive_transactions()
+
+                time_taken, hashes_computed = node_a.mine(attempts=1, track=True)
+                try:
+                    energy_res = energyusage.evaluate(node_a.mine, 1, True, energyOutput=True, printToScreen=False)
+                except:
+                    energy_res = [0,0,0]
+
+                if time_taken == -1:
+                    continue_calc = False
+
+                results[lz-1][i] = (time_taken, hashes_computed, energy_res[1])
+
+        print(results)
+
+
 if __name__ == '__main__':
-    print("q_3a")
+    q4_a()
+
+    """print("q_3a")
     print(q_3a())
     print()
 
     print("q_3b")
     print(q_3b())
-    print()
+    print()"""
