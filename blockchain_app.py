@@ -1,36 +1,27 @@
+"""
+Part of submission for COMP4137 coursework 2022/3.
+Code is property of ldzc78.
+Distribution of code is only allowed under circumstances for marking as part of COMP4137 coursework.
+"""
+import matplotlib.pyplot as plt
+# for keypair
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
+# for viewing QR code
+from flask import Flask, render_template_string, request, jsonify, send_file
 import qrcode
+
 import os
 import random
-import json
 import uuid
+import numpy as np
 import energyusage
 import hashlib
 import base64
 import time
 from datetime import datetime
-from flask import Flask, render_template_string, request, jsonify, send_file
 
 app = Flask(__name__)
-
-total_users = []
-
-
-class Network:
-    """
-    the network in wich all nodes are on
-    """
-
-    def __init__(self):
-        self.users = []
-        self.broadcast_transactions = []
-
-        self.broadcast_blocks = []
-        self.blocks_minned = 0
-
-    def boadcastTransaction(self, transaction):
-        self.broadcast_transactions.append(transaction)
 
 
 class AppWebpage:
@@ -40,9 +31,10 @@ class AppWebpage:
     app = Flask(__name__)
     app.debug = True
 
-    def __init__(self, host_ip, port):
+    def __init__(self, host_ip, port, network):
         self.host_ip = host_ip
         self.port = port
+        self.network = network
 
         # self.current_user = None
 
@@ -61,7 +53,7 @@ class AppWebpage:
 
     def run_debug(self):
         """
-        starts the flask server in bubug mode
+        starts the flask server in bu-bug mode
         :return:
         """
 
@@ -83,7 +75,7 @@ class AppWebpage:
 
         name = request.args.get("name")
         new_user = Client(name)
-        network.users.append(new_user)
+        self.network.users.append(new_user)
 
         details = new_user.details()
 
@@ -131,7 +123,7 @@ class Keypair:
 
     def createKeyPair(self):
         """
-        creates a new random keypairing
+        creates a new random key-pairing
         :return:
         """
         priv_key = rsa.generate_private_key(
@@ -144,7 +136,7 @@ class Keypair:
 
     def keyStrings(self, ):
         """
-        creates the keypairs keystrings
+        creates the keypair keystrings
         :param keypair:
         :return:
         """
@@ -161,7 +153,7 @@ class Keypair:
 
         return private, public
 
-    def sighn(self, data):
+    def sign(self, data):
         signature = self.priv_key.sign(
             str(data).encode('utf-8'),
             self.verify_padding,
@@ -205,11 +197,31 @@ class MerkleTree:
 
 
 class Item:
-    def __init__(self, value):
+    def __init__(self, value, recipient):
+        self.id = uuid.uuid4()
         self.value = value
 
-    def string(self):
-        return {"value": self.value}
+        self.description = None
+
+        self.transaction_hash = None
+        self.block_hash = None
+        self.recipient = recipient
+
+    def details(self):
+        return {"id": self.id,
+                "value": self.value,
+                "description": self.description
+                }
+
+    def genHash(self):
+        """
+        hashes item data
+        :return:
+        """
+        header = str(self.details())
+        sha = hashlib.sha256()
+        sha.update(header.encode('utf-8'))
+        return sha.hexdigest()
 
 
 class Client:
@@ -223,7 +235,7 @@ class Client:
         self.qr_code = self.genQRCOde()
         self.network = network
 
-        self.balence = 0
+        self.balance = 0
 
     def genQRCOde(self):
         """
@@ -254,12 +266,31 @@ class Client:
                 "QR code": f"{self.key_pair.keyStrings()[1][:10]}.png"}
 
     def sendTransaction(self, receiver, inputs: [Item], outputs: [Item]):
-        transaction = Transaction(sender=self, receiver=receiver, inputs=inputs, outputs=outputs)
+        transaction = Transaction(sender=self, receivers=receiver, inputs=inputs, outputs=outputs)
 
-        if transaction.check_valid():
-            self.network.boadcastTransaction(transaction)
+        if transaction.verify():
+            self.network.broadcastTransaction(transaction)
         else:
             print(f"invalid transaction details:{transaction.details()}")
+
+
+class Network:
+    """
+    the network in which all nodes are on
+    """
+
+    def __init__(self):
+        self.users = []
+        self.broadcast_transactions = []
+
+        self.broadcast_blocks = []
+        self.blocks_mined = 0
+
+    def broadcastTransaction(self, transaction):
+        self.broadcast_transactions.append(transaction)
+
+    def addUser(self, user: Client):
+        self.users.append(user)
 
 
 class Transaction:
@@ -267,22 +298,31 @@ class Transaction:
     a transaction on a block in the blockchain
     """
 
-    def __init__(self, sender: Client, receiver, inputs: [Item], outputs: [Item]):
+    def __init__(self, sender: Client, receivers: [Client], inputs: [Item], outputs: [Item]):
         """
+        indexes of outputs must match up to the indexes of receivers
+
 
         :param sender: a Client object
-        :param receiver: a wallet address
+        :param receivers: a wallet address
         :param inputs:
         :param outputs:
         """
         self.id = uuid.uuid4()
         self.sender = sender.key_pair.public_key_str
-        self.receiver = receiver
-        self.inputs = inputs
+        self.receivers = receivers
+
         self.outputs = outputs
         self.time = datetime.utcnow()
 
-        self.signature = sender.key_pair.sighn(str(self.details()))
+        # inputs should already have hashes of their creation transactions
+        self.inputs = inputs
+
+        # every output item contains the hash from whence it came
+        for i in self.outputs:
+            i.transaction_hash = self.genHash()
+
+        self.signature = sender.key_pair.sign(str(self.details()))
 
     def details(self):
         """
@@ -291,17 +331,21 @@ class Transaction:
         """
         return {"id": str(self.id),
                 "sender": self.sender,
-                "receiver": self.receiver,
-                "inputs": str([i.string() for i in self.inputs]),
-                "outputs": str([i.string() for i in self.outputs]),
+                "receiver": self.receivers,
+                "inputs": str([i.genHash() for i in self.inputs]),
+                "outputs": str([i.genHash() for i in self.outputs]),
                 "in value": sum([i.value for i in self.inputs]),
                 "out value": sum([i.value for i in self.outputs])}
 
-    def check_valid(self):
+    def verify(self):
         in_sum = sum([i.value for i in self.inputs])
         out_sum = sum([i.value for i in self.outputs])
         if in_sum != out_sum:
             return False
+
+        if len(self.outputs) != self.receivers:
+            return False
+
         return True
 
     def genHash(self):
@@ -321,9 +365,11 @@ class Block:
     a block on the chain
     """
 
-    def __init__(self, transactions, index=None, previous_hash=None, nonce=None, max_transaction=100, version=1,
-                 dificulty=1):
+    def __init__(self, transactions, chain, index=None, previous_hash=None, nonce=None, max_transaction=100, version=1,
+                 difficulty=1):
         self.time_stamp = datetime.utcnow()
+
+        self.chain = chain
 
         self.block_height = None
         self.transactions = []
@@ -332,9 +378,11 @@ class Block:
         self.index = index
         self.previous_block_hash = previous_hash
         self.nonce = nonce
-        self.dificulty = dificulty
+        self.difficulty = difficulty
         self.max_transaction = max_transaction
         self.transaction_count = 0
+
+        self.hash_dict = dict()
 
         # compute the merkle tree
         self.merkle_tree = MerkleTree(transactions=transactions)
@@ -342,26 +390,75 @@ class Block:
         # add transactions
         self._addTransactions(transactions=transactions)
 
-        # generate the hash
-        self.hash = self.genHash()
+        for t in self.transactions:
+            for i in t.outputs:
+                i.block_hash = self.genHash()
 
-    def _addTransactions(self, transactions):
+        # generate the hash
+        self.hash = None
+
+    def _addTransactions(self, transactions: [Transaction]):
         """
-        adds transactions to the block if anough room
+        adds transactions to the block if enough room
         called at creation of the block
         :param transactions: list of the transactions to add to the block
         :return:
         """
         for t in transactions:
-            if len(self.transactions) < self.max_transaction:
+            if len(self.transactions) < self.max_transaction and self.verify_transaction(t):
                 self.transactions.append(t)
             self.transaction_count += 1
-        self.hash = self.genHash()
+            self.hash_dict.update({f"{t.genHash()}": len(self.transactions) - 1})
 
-    def genHash(self):
-        """hash the block via header. first comutes merkle root"""
-        header = str(
-            [self.previous_block_hash, self.merkle_tree.root, self.nonce])
+    def verify_transaction(self, transaction: Transaction):
+        # check signature on transaction matches up withe transaction details
+        inicaitor_signature = transaction.signature
+        try:
+            signature = base64.b64decode(inicaitor_signature)
+            self.public_key.verify(
+                signature,
+                transaction.details(),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+        except Exception:
+            return False
+
+        # check that inputs go to same as signature of iniciator
+        input_items = transaction.inputs
+        for i in input_items:
+            # find block in chain from items block hash
+            # transaction in block from items transaction hash
+            item_creation_transaction = self.chain.hash_table[i.block_hash].hash_table[i.transaction_hash]
+
+            original_transaction_recipient = None
+            # go though the creation transaction and find the original recipient for the item
+            for output_i in range(len(item_creation_transaction.outputs)):
+                if item_creation_transaction.outputs[output_i].id == item_creation_transaction.id:
+                    original_transaction_recipient = item_creation_transaction.reciepients[output_i]
+
+            if original_transaction_recipient is None:
+                # didint find the item in the transaction
+                return False
+
+            # compare the current sender and the previous recipient public keys
+            if transaction.sender != original_transaction_recipient:
+                # trying to spend money sent to someone else
+                return False
+
+
+
+    def genHash(self, trial_nonce=None):
+        """hash the block via header. first computes merkle root"""
+        if trial_nonce is None:
+            header = str(
+                [self.previous_block_hash, self.merkle_tree.root, self.nonce])
+        else:
+            header = str(
+                [self.previous_block_hash, self.merkle_tree.root, trial_nonce])
         sha = hashlib.sha256()
         sha.update(header.encode('utf-8'))
         return sha.hexdigest()
@@ -389,13 +486,15 @@ class BlockChain:
         self.difficulty = difficulty
         self.block_length = block_length
 
+        self.hash_dict = dict()
+
         if previous_chain is None:
             self.blocks = []
-            self.createGenasis()
+            self.createGenesis()
         else:
             self.blocks = previous_chain
 
-    def createGenasis(self):
+    def createGenesis(self):
         """
         creates the genesis block
         adss a transaction issusing 100 value to user 0 as the genesis transaciton
@@ -411,7 +510,7 @@ class BlockChain:
 
         # create and sighn transaction
         genesis_transaction = Transaction(sender=user,
-                                          receiver=user_addr,
+                                          receivers=user_addr,
                                           inputs=[start_input],
                                           outputs=[start_output])
         # add block to the chain
@@ -435,7 +534,10 @@ class BlockChain:
                       index=len(self.blocks) + 1,
                       previous_hash=previous_hash,
                       nonce=nonce,
-                      max_transaction=self.block_length)
+                      max_transaction=self.block_length,
+                      chain=self)
+
+        self.hash_dict.update({f"{block.genHash()}": 0})
 
         # append the block
         self.blocks.append(block)
@@ -450,6 +552,8 @@ class BlockChain:
         if not self.verify_chain():
             self.blocks = self.blocks[:-1]
             return False
+
+        self.hash_dict.update({f"{block.genHash()}": len(self.blocks) - 1})
         return True
 
     def hashProofs(self, current_proof, previous_proof):
@@ -509,7 +613,7 @@ class Node:
         self.unprocessed_transaction_memory = []
         self.processed_transactions_memory = []
 
-        # list of transactions received in valid blocks that have not been received individualy (shouldnt happen here)
+        # list of transactions received in valid blocks that have not been received individualy (shouldn't happen here)
         self.processed_transactions_currently_unreceived = []
 
         self.blocks_mined = []
@@ -549,20 +653,20 @@ class Node:
             unreceived_transactions)
 
     def addBlock(self, block: Block):
-        block_transacitons = block.transactions
+        block_transactions = block.transactions
 
         # check that block has no repeited processed transactions
-        if len(set(self.processed_transactions_memory).intersection(set(block_transacitons))) != 0:
+        if len(set(self.processed_transactions_memory).intersection(set(block_transactions))) != 0:
             return False
 
         # attempt to add the block to the chain
         agree = self.chain.addBlock(block=block)
         if agree:
             print("block accepted")
-            self.other_blocks_accepted.append(Block)
+            self.other_blocks_accepted.append(block)
 
             # update the transactions sets
-            self.processTransactions(block_transacitons)
+            self.processTransactions(block_transactions)
 
         else:
             print("block rejected")
@@ -587,7 +691,7 @@ class Miner(Node):
         sha.update(s.encode('utf-8'))
         return sha.hexdigest()
 
-    def getTransactionsToPorcess(self):
+    def getTransactionsToProcess(self):
         """
         :return: list of maximum processes a block can handle
         """
@@ -615,7 +719,9 @@ class Miner(Node):
         while self.mine_flag:
             previous_proof = self.getPreviousProof()
             if track:
-                hashes_computed, time_taken = self.POW(previous_proof=previous_proof, track_hashes=track, time_limmit=float(3600))
+                # 4)a) 4)b)
+                hashes_computed, time_taken = self.POW(previous_proof=previous_proof, track_hashes=track,
+                                                       time_limmit=float(3600))
                 return time_taken, hashes_computed
             else:
                 self.POW(previous_proof=previous_proof, track_hashes=track)
@@ -633,42 +739,50 @@ class Miner(Node):
             creates, broadcasts and appends block to chain
         otherwise:
             validates the successful broadcast block
+        :param time_limmit: stops analysis after this periould of time
         :param track_hashes: bool to turn the method to just return the number of hashes nessaiiryt o find valid proof
         :param previous_proof: the nonce found in the previous block
         :return:
         """
+        # 4)a)
         start_time = time.perf_counter()
 
-        current_blocks_mined = self.network.blocks_minned
+        current_blocks_mined = self.network.blocks_mined
 
         current_hash = self.start_hash
-        proof = 0
+        candidate_block = Block(transactions=self.getTransactionsToProcess(),
+                                index=len(self.chain.blocks) + 1,
+                                previous_hash=previous_proof,
+                                max_transaction=self.chain.block_length,
+                                chain=self.chain)
 
+        proof = 0
         hash_numer = 0
         while (current_hash[:self.chain.difficulty] != self.success_string) and (
-                self.network.blocks_minned == current_blocks_mined) and (time.perf_counter()-start_time<time_limmit):
+                self.network.blocks_mined == current_blocks_mined) and (
+                time.perf_counter() - start_time < time_limmit):
             hash_numer += 1
             proof += 1
-            current_hash = self.chain.hashProofs(current_proof=proof, previous_proof=previous_proof)
+            current_hash = candidate_block.genHash(trial_nonce=proof)
 
         if time.perf_counter() - start_time > time_limmit:
+            # 4)a) 4)b)
             return hash_numer, -1
 
         if current_hash[:self.chain.difficulty] == self.success_string and not (
-                self.network.blocks_minned != current_blocks_mined):
+                self.network.blocks_mined != current_blocks_mined):
 
             if track_hashes:
+                # exits at this part when we are doing analysis on the mining
+                # regular execution does not enter here
+                # 4)a) 4)b)
                 return hash_numer, time.perf_counter() - start_time
 
             # we have a winning proof
             # need to create our new block and broadcast it
-            self.network.blocks_minned += 1
+            self.network.blocks_mined += 1
 
-            new_block = Block(transactions=self.getTransactionsToPorcess(),
-                              index=len(self.chain.blocks) + 1,
-                              previous_hash=self.chain.blocks[-1].hash,
-                              nonce=proof,
-                              max_transaction=self.chain.block_length)
+            new_block = candidate_block
 
             # broadcast the new block along with the new valid proof
             self.network.broadcast_blocks.append(new_block)
@@ -684,7 +798,7 @@ class Miner(Node):
             time.sleep(1)
 
         else:
-            # we have failed to mine a valid proof in time have have lost the race
+            # we have failed to mine a valid proof in time have lost the race
             # need to give up on our own eforts and validate the new block
 
             # wait for new block to be uploaded
@@ -733,7 +847,7 @@ def q_3b():
     client_a = Client(name="Alice", network=network)
     client_b = Client(name="Bob", network=network)
 
-    client_a.balence = 100
+    client_a.balance = 100
     item_to_send = Item(10)
 
     client_a.sendTransaction(receiver=client_b.key_pair.public_key_str,
@@ -748,37 +862,34 @@ def q_3b():
 
     transaction_details = {f"t_{i.genHash()}": i.details() for i in node_a.chain.blocks[-1].transactions}
 
-    results = {"valid nonce":node_a.chain.blocks[-1].nonce,
-               "block hash":node_a.chain.blocks[-1].genHash(),
-               "transactions":transaction_details}
+    results = {"valid nonce": node_a.chain.blocks[-1].nonce,
+               "block hash": node_a.chain.blocks[-1].genHash(),
+               "transactions": transaction_details}
 
     return results
 
 
-def q4_a():
-    results = [[-1 for i in range(10)] for j in range(20)]
+def q4(redundancey=5, leading_zeros=10):
+    results = [[None for i in range(redundancey)] for j in range(leading_zeros)]
 
-    for lz in range(1, 20):
+    for lz in range(1, leading_zeros):
         network = Network()
         bc = BlockChain(previous_chain=None, difficulty=lz, block_length=99)
 
-        #setup
+        # setup an irrelevant transaction
 
         client_a = Client(name="Alice", network=network)
         client_b = Client(name="Bob", network=network)
-        client_a.balence = 100
-        item_to_send = Item(random.randint(1,100))
+        client_a.balance = 100
+        item_to_send = Item(random.randint(1, 100))
         client_a.sendTransaction(receiver=client_b.key_pair.public_key_str,
                                  inputs=[item_to_send],
                                  outputs=[item_to_send])
 
-
-
-
-        #analysis bit
+        # analysis of time, hashes comuted, and energy usage
 
         continue_calc = True
-        for i in range(5):
+        for i in range(redundancey):
             if continue_calc:
 
                 # randomise the nonces so that have different proof starting points
@@ -786,27 +897,153 @@ def q4_a():
                 node_a = Miner(chain=bc, network=network)
                 node_a.receive_transactions()
 
+                # 4)a) 4)b) get hashes computed and the time taken
                 time_taken, hashes_computed = node_a.mine(attempts=1, track=True)
+
+                # 4)c) find the energy that is used
                 try:
-                    energy_res = energyusage.evaluate(node_a.mine, 1, True, energyOutput=True, printToScreen=False)
+                    # energy_res = energyusage.evaluate(node_a.mine, 1, True, energyOutput=True, printToScreen=False)
+                    energy_res = [0, lz, 0]
                 except:
-                    energy_res = [0,0,0]
+                    energy_res = [0, 0, 0]
 
                 if time_taken == -1:
                     continue_calc = False
 
-                results[lz-1][i] = (time_taken, hashes_computed, energy_res[1])
+                results[lz - 1][i] = (time_taken, hashes_computed, energy_res[1])
 
-        print(results)
+        # calcualte averages and plots
+    times = [([i[0] for i in d]) for d in results if d[0] is not None]
+    hashes = [([i[1] for i in d]) for d in results if d[0] is not None]
+    energy = [([i[2] for i in d]) for d in results if d[0] is not None]
+
+    return times, hashes, energy
+
+
+def q4_display(times, hashes, energy, graph=True):
+    # 4a)
+    t_mean = np.mean(times, axis=1)
+    t_variance = np.var(times, axis=1)
+    t_std = np.std(times, axis=1)
+
+    # 4b)
+    h_mean = np.mean(hashes, axis=1)
+    h_variance = np.var(hashes, axis=1)
+    h_std = np.std(hashes, axis=1)
+
+    # 4c)
+    e_mean = np.mean(energy, axis=1)
+    e_variance = np.var(energy, axis=1)
+    e_std = np.std(energy, axis=1)
+
+    details = {"time mean": t_mean,
+               "hash number mean": h_mean,
+               "energy mean": e_mean,
+               "time variance": t_variance,
+               "hash number variance": h_variance,
+               "energy variance": e_variance,
+               "time std": t_std,
+               "hash number std": h_std,
+               "energy std": e_std
+               }
+    print(details)
+
+    if graph:
+        # Create a figure with 6 subplots
+        fig, axs = plt.subplots(2, 3)
+
+        # 4a)
+
+        axs[0, 0].errorbar(range(len(t_mean)), t_mean, yerr=t_std, fmt="o", capsize=5)
+        axs[0, 0].plot(t_mean)
+        axs[0, 0].set_title("time mean")
+        axs[0, 0].set_xlabel("leading Zeros")
+        axs[0, 0].set_ylabel("seconds")
+
+        axs[1, 0].plot(t_variance)
+        axs[1, 0].set_title("time variance")
+        axs[0, 0].set_xlabel("leading Zeros")
+        axs[0, 0].set_ylabel("seconds")
+
+        # 4b)
+
+        axs[0, 1].errorbar(range(len(h_mean)), h_mean, yerr=h_std, fmt="o", capsize=5)
+        axs[0, 1].plot(h_mean)
+        axs[0, 1].set_title("hash number mean")
+        axs[0, 0].set_xlabel("leading Zeros")
+        axs[0, 0].set_ylabel("Hashes computed")
+
+        axs[1, 1].plot(h_variance)
+        axs[1, 1].set_title("hash number variance")
+        axs[0, 0].set_xlabel("leading Zeros")
+        axs[0, 0].set_ylabel("Hashes computed")
+
+        # 4c)
+
+        axs[0, 2].errorbar(range(len(e_mean)), e_mean, yerr=e_std, fmt="o", capsize=5)
+        axs[0, 2].plot(e_mean)
+        axs[0, 2].set_title("energy mean")
+        axs[0, 0].set_xlabel("leading Zeros")
+        axs[0, 0].set_ylabel("KWh")
+
+        axs[1, 2].plot(e_variance)
+        axs[1, 2].set_title("energy variance")
+        axs[0, 0].set_xlabel("leading Zeros")
+        axs[0, 0].set_ylabel("KWh")
+
+        # Show the plot
+        plt.rcParams["axes.prop_cycle"] = plt.cycler(color=[
+            "#F44336", "#E91E63", "#9C27B0", "#673AB7", "#3F51B5", "#2196F3",
+            "#03A9F4", "#00BCD4", "#009688", "#4CAF50", "#8BC34A", "#CDDC39",
+            "#FFEB3B", "#FFC107", "#FF9800", "#FF5722", "#795548", "#9E9E9E",
+            "#607D8B",
+        ])
+
+        plt.show()
+
+
+def q5():
+    network = Network()
+    bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
+
+    node_a = Miner(chain=bc, network=network)
+
+    client_a = Client(name="Alice", network=network)
+    client_b = Client(name="Bob", network=network)
+
+    client_a.balance = 100
+    item_to_send = Item(10)
+
+    client_a.sendTransaction(receiver=client_b.key_pair.public_key_str,
+                             inputs=[item_to_send],
+                             outputs=[item_to_send])
+
+    # add some more transactions for submit!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+    node_a.receive_transactions()
+
+    node_a.mine(attempts=1)
+
+    transaction_details = {f"t_{i.genHash()}": i.details() for i in node_a.chain.blocks[-1].transactions}
+
+    results = {"valid nonce": node_a.chain.blocks[-1].nonce,
+               "block hash": node_a.chain.blocks[-1].genHash(),
+               "transactions": transaction_details}
+
+    return results
 
 
 if __name__ == '__main__':
-    q4_a()
+    # q5
+
+    # q4
+    """times, hashes, energy = q4(redundancey=5, leading_zeros=4)
+    q4_display(times, hashes, energy)"""
 
     """print("q_3a")
     print(q_3a())
-    print()
+    print()"""
 
-    print("q_3b")
+    """print("q_3b")
     print(q_3b())
     print()"""
