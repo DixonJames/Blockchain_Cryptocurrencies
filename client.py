@@ -3,8 +3,9 @@ import os
 import qrcode
 
 from Item import Item
-from transaction import Transaction
+
 from keypair import Keypair
+from transaction import Transaction
 
 
 class Client:
@@ -18,7 +19,6 @@ class Client:
         self.qr_code = self.genQRCOde()
         self.network = network
 
-        self.balance = 0
 
     def genQRCOde(self):
         """
@@ -48,10 +48,17 @@ class Client:
                 "wallet address": self.key_pair.keyStrings()[1],
                 "QR code": f"{self.key_pair.keyStrings()[1][:10]}.png"}
 
-    def sendTransaction(self, receiver, inputs: [Item], outputs: [Item]):
-        transaction = Transaction(sender=self, receivers=receiver, inputs=inputs, outputs=outputs)
+    def sendTransaction(self, receivers, inputs: [int], outputs: [Item]):
+        reciver_i = 0
+        for output in outputs:
+            output.recipient = receivers[reciver_i]
+            reciver_i += 1
+
+
+        transaction = Transaction(sender=self, receivers=receivers, inputs=inputs, outputs=outputs)
 
         if transaction.verify():
             self.network.broadcastTransaction(transaction)
+            return transaction.genHash(), transaction
         else:
             print(f"invalid transaction details:{transaction.details()}")

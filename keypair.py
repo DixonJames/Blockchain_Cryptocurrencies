@@ -1,5 +1,6 @@
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives import serialization, hashes
+
 import base64
 
 class Keypair:

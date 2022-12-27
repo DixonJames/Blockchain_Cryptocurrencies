@@ -31,7 +31,6 @@ from blockchain import BlockChain
 from node import Miner, Node
 from network import Network
 
-
 app = Flask(__name__)
 
 
@@ -155,7 +154,7 @@ def q_3b():
     client_a.balance = 100
     item_to_send = Item(10)
 
-    client_a.sendTransaction(receiver=client_b.key_pair.public_key_str,
+    client_a.sendTransaction(receivers=client_b.key_pair.public_key_str,
                              inputs=[item_to_send],
                              outputs=[item_to_send])
 
@@ -187,7 +186,7 @@ def q4(redundancey=5, leading_zeros=10):
         client_b = Client(name="Bob", network=network)
         client_a.balance = 100
         item_to_send = Item(random.randint(1, 100))
-        client_a.sendTransaction(receiver=client_b.key_pair.public_key_str,
+        client_a.sendTransaction(receivers=client_b.key_pair.public_key_str,
                                  inputs=[item_to_send],
                                  outputs=[item_to_send])
 
@@ -307,7 +306,11 @@ def q4_display(times, hashes, energy, graph=True):
         plt.show()
 
 
-def q5():
+def q5_verify():
+    """
+    functions that shows vlidation of transactions in an added block
+    :return:
+    """
     network = Network()
     bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
 
@@ -316,14 +319,12 @@ def q5():
     client_a = Client(name="Alice", network=network)
     client_b = Client(name="Bob", network=network)
 
-    client_a.balance = 100
-    item_to_send = Item(10)
+    item_to_send = Item(value=10)
+    null_item = Item(value=None)
 
-    client_a.sendTransaction(receiver=client_b.key_pair.public_key_str,
-                             inputs=[item_to_send],
+    client_a.sendTransaction(receivers=[client_b.key_pair.public_key_str],
+                             inputs=[null_item],
                              outputs=[item_to_send])
-
-    # add some more transactions for submit!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
     node_a.receive_transactions()
 
@@ -338,8 +339,110 @@ def q5():
     return results
 
 
+def q5():
+    """
+    functions that shows vlidation of transactions in an added block
+    :return:
+    """
+    transactions = []
+    network = Network()
+    bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
+
+    node_a = Miner(chain=bc, network=network)
+
+    client_a = Client(name="Alice", network=network)
+    client_b = Client(name="Bob", network=network)
+    client_c = Client(name="charlie", network=network)
+
+    item_to_send = Item(value=10)
+    null_item = Item(value=None)
+
+    i1 = Item(value=10)
+    i2 = Item(value=10)
+    i3 = Item(value=10)
+
+
+    t_h, t1 = client_a.sendTransaction(receivers=[client_a.key_pair.public_key_str],
+                                       inputs=[Item(value=None)],
+                                       outputs=[i1])
+    t_h, t2 = client_b.sendTransaction(receivers=[client_b.key_pair.public_key_str],
+                                       inputs=[Item(value=None)],
+                                       outputs=[i2])
+    t_h, t3 = client_c.sendTransaction(receivers=[client_c.key_pair.public_key_str],
+                                       inputs=[Item(value=None)],
+                                       outputs=[i3])
+
+    transactions.extend([t1,t2,t3])
+
+    node_a.receive_transactions()
+    node_a.mine(attempts=1)
+
+
+
+    for i in range(100):
+        o1 = Item(value=5)
+        o2 = Item(value=5)
+        o3 = Item(value=5)
+        o4 = Item(value=5)
+        o5 = Item(value=5)
+        o6 = Item(value=5)
+
+        # all send 5 to both neighbors
+        t_h, t4 = client_a.sendTransaction(
+            receivers=[client_b.key_pair.public_key_str, client_c.key_pair.public_key_str],
+            inputs=[i1],
+            outputs=[o1, o2])
+
+        t_h, t5 = client_b.sendTransaction(
+            receivers=[client_a.key_pair.public_key_str, client_c.key_pair.public_key_str],
+            inputs=[i2],
+            outputs=[o3, o4])
+
+        t_h, t6 = client_c.sendTransaction(
+            receivers=[client_b.key_pair.public_key_str, client_a.key_pair.public_key_str],
+            inputs=[i3],
+            outputs=[o5, o6])
+
+        node_a.receive_transactions()
+
+        node_a.mine(attempts=1)
+
+        i1 = Item(value=10)
+        i2 = Item(value=10)
+        i3 = Item(value=10)
+
+        # all merge the 2*5 they have received from neighbors
+        t_h, t7 = client_a.sendTransaction(receivers=[client_a.key_pair.public_key_str],
+                                           inputs=[o3, o6],
+                                           outputs=[i1])
+
+        t_h, t8 = client_b.sendTransaction(receivers=[client_b.key_pair.public_key_str],
+                                           inputs=[o1, o5],
+                                           outputs=[i2])
+
+        t_h, t9 = client_c.sendTransaction(receivers=[client_c.key_pair.public_key_str],
+                                           inputs=[o2, o4],
+                                           outputs=[i3])
+
+        transactions.extend([t4, t5, t6, t7, t8, t9])
+
+        node_a.receive_transactions()
+
+        node_a.mine(attempts=1)
+
+    transaction_details = {f"t_{i.genHash()}": i.details() for i in node_a.chain.blocks[-1].transactions}
+
+    results = {"valid nonce": node_a.chain.blocks[-1].nonce,
+               "block hash": node_a.chain.blocks[-1].genHash(),
+               "transactions": transaction_details}
+
+    return results
+
+
 if __name__ == '__main__':
     # q5
+    q5()
+    """q5_verify()"""
 
     # q4
     """times, hashes, energy = q4(redundancey=5, leading_zeros=4)

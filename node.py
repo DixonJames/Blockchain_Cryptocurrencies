@@ -1,11 +1,12 @@
 import hashlib
 
-
 from block import Block
 from blockchain import BlockChain
 from network import Network
 from transaction import Transaction
-from datetime import datetime
+
+import time
+
 
 class Node:
     """
@@ -58,7 +59,7 @@ class Node:
         unprocessed.difference_update(to_process)
         self.unprocessed_transaction_memory = list(unprocessed)
 
-        self.processed_transactions_currently_unreceived = self.processed_transactions_currently_unreceived.extend(
+        self.processed_transactions_currently_unreceived.extend(
             unreceived_transactions)
 
     def addBlock(self, block: Block):
@@ -109,13 +110,13 @@ class Miner(Node):
 
         return to_process
 
-    def getPreviousProof(self):
+    def getPreviousHash(self):
         """
         :return: the previous proof braodcast to the nework
         """
         if len(self.network.broadcast_blocks) != 0:
-            return self.network.broadcast_blocks[-1].nonce
-        return self.chain.blocks[0].nonce
+            return self.network.broadcast_blocks[-1].hash
+        return self.chain.blocks[0].hash
 
     def mine(self, attempts: int = None, track=False):
         """
@@ -126,21 +127,22 @@ class Miner(Node):
         """
 
         while self.mine_flag:
-            previous_proof = self.getPreviousProof()
+            previous_hash = self.getPreviousHash()
             if track:
                 # 4)a) 4)b)
-                hashes_computed, time_taken = self.POW(previous_proof=previous_proof, track_hashes=track,
+                hashes_computed, time_taken = self.POW(previous_hash=previous_hash, track_hashes=track,
                                                        time_limmit=float(3600))
                 return time_taken, hashes_computed
             else:
-                self.POW(previous_proof=previous_proof, track_hashes=track)
+                self.POW(previous_hash=previous_hash, track_hashes=track)
 
             if attempts is not None:
                 attempts -= 1
                 if attempts == 0:
                     self.mine_flag = False
+        self.mine_flag = True
 
-    def POW(self, previous_proof, track_hashes=False, time_limmit=None):
+    def POW(self, previous_hash, track_hashes=False, time_limmit=None):
         """
         performs proof of work.
         attempts to mine the next block
@@ -150,7 +152,7 @@ class Miner(Node):
             validates the successful broadcast block
         :param time_limmit: stops analysis after this periould of time
         :param track_hashes: bool to turn the method to just return the number of hashes nessaiiryt o find valid proof
-        :param previous_proof: the nonce found in the previous block
+        :param previous_hash: the nonce found in the previous block
         :return:
         """
         # 4)a)
@@ -161,22 +163,35 @@ class Miner(Node):
         current_hash = self.start_hash
         candidate_block = Block(transactions=self.getTransactionsToProcess(),
                                 index=len(self.chain.blocks) + 1,
-                                previous_hash=previous_proof,
+                                previous_hash=previous_hash,
                                 max_transaction=self.chain.block_length,
                                 chain=self.chain)
 
         proof = 0
         hash_numer = 0
-        while (current_hash[:self.chain.difficulty] != self.success_string) and (
-                self.network.blocks_mined == current_blocks_mined) and (
-                time.perf_counter() - start_time < time_limmit):
-            hash_numer += 1
-            proof += 1
-            current_hash = candidate_block.genHash(trial_nonce=proof)
 
-        if time.perf_counter() - start_time > time_limmit:
-            # 4)a) 4)b)
-            return hash_numer, -1
+        if time_limmit is not None:
+            # for time limmit
+            while (current_hash[:self.chain.difficulty] != self.success_string) and (
+                    self.network.blocks_mined == current_blocks_mined) and (
+                    time.perf_counter() - start_time < time_limmit):
+                hash_numer += 1
+                proof += 1
+                current_hash = candidate_block.genHash(trial_nonce=proof)
+
+            if time.perf_counter() - start_time > time_limmit:
+                # 4)a) 4)b)
+                return hash_numer, -1
+
+        else:
+            # for non time limmit
+            while (current_hash[:self.chain.difficulty] != self.success_string) and (
+                    self.network.blocks_mined == current_blocks_mined):
+                hash_numer += 1
+                proof += 1
+                current_hash = candidate_block.genHash(trial_nonce=proof)
+
+
 
         if current_hash[:self.chain.difficulty] == self.success_string and not (
                 self.network.blocks_mined != current_blocks_mined):
@@ -192,6 +207,9 @@ class Miner(Node):
             self.network.blocks_mined += 1
 
             new_block = candidate_block
+            candidate_block.changeNonce(nonce=proof)
+            candidate_block.setTransactionBlockHash()
+            candidate_block.verifyAllTransactions()
 
             # broadcast the new block along with the new valid proof
             self.network.broadcast_blocks.append(new_block)
@@ -223,4 +241,4 @@ class Miner(Node):
             else:
                 print("block rejected")
                 self.other_blocks_rejected.append(unvalidated_new_block)
-
+        pass

@@ -1,11 +1,12 @@
-
 import hashlib
 import uuid
 
-from client import Client
+
 from Item import Item
 from datetime import datetime
 
+class Client:
+    pass
 
 class Transaction:
     """
@@ -18,16 +19,19 @@ class Transaction:
 
 
         param sender: a Client object
-        :param receivers: a wallet address
+        :param receivers: list of wallet addresses
         :param inputs:
-        :param outputs:
+        :param outputs: list of items. same length as receivers
         """
+
         self.id = uuid.uuid4()
         self.sender = sender.key_pair.public_key_str
         self.receivers = receivers
 
         self.outputs = outputs
         self.time = datetime.utcnow()
+
+
 
         # inputs should already have hashes of their creation transactions
         self.inputs = inputs
@@ -54,10 +58,10 @@ class Transaction:
     def verify(self):
         in_sum = sum([i.value for i in self.inputs])
         out_sum = sum([i.value for i in self.outputs])
-        if in_sum != out_sum:
+        if in_sum != out_sum and not(in_sum == -1):
             return False
 
-        if len(self.outputs) != self.receivers:
+        if len(self.outputs) != len(self.receivers):
             return False
 
         return True

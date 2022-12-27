@@ -66,9 +66,16 @@ class BlockChain:
                       previous_hash=previous_hash,
                       nonce=nonce,
                       max_transaction=self.block_length,
-                      chain=self)
+                      chain=self,
+                      genesis=True)
 
         self.hash_dict.update({f"{block.genHash()}": 0})
+
+        #gp though items in genesis transaction and add the block and transaction hashes
+        for transaction in block.transactions:
+            for item in transaction.outputs:
+                item.block_hash = block.genHash()
+                item.transaction_hash = transaction.genHash()
 
         # append the block
         self.blocks.append(block)
@@ -80,7 +87,7 @@ class BlockChain:
         :return: a boolean as to weather or not the block is accepted
         """
         self.blocks.append(block)
-        if not self.verify_chain():
+        if (not self.verify_chain()):
             self.blocks = self.blocks[:-1]
             return False
 
@@ -122,8 +129,46 @@ class BlockChain:
             # hash of previous proof and current proof is valid hash inside hash difficulty region
             # checks validity of the current nonce mined
 
-            hash_proofs = self.hashProofs(current_proof=current.nonce, previous_proof=previous.nonce)
+            hash_proofs = current.genHash()
             if hash_proofs[:self.difficulty] != "0" * self.difficulty:
                 return False
 
         return True
+
+    def findTransaction(self, t_hash=None, t_ID=None, t_datetime=None):
+        if t_ID is None and t_hash is None:
+            print(f"cant find individual transction without {t_hash} or {t_ID}")
+            return None
+
+        self.blocks.sort(key= lambda x: x.time_stamp)
+
+        #look at t_datetime, do a binary search though the block's transaction time ranges
+        if t_datetime is not None:
+            target_time = t_datetime
+            low_block = self.blocks[0]
+            high_block = self.blocks[-1]
+
+            mid_index = int(len(self.blocks)/2)
+
+            while not(self.blocks[mid_index].first_transaction_time <= target_time <= self.blocks[mid_index].last_transaction_time):
+
+                if self.blocks[mid_index].first_transaction_time > target_time:
+                    high_block = self.blocks[mid_index]
+                elif self.blocks[mid_index].last_transaction_time < target_time:
+                    low_block = self.blocks[mid_index]
+
+                self.blocks.index(high_block)
+                mid_index = int((self.blocks.index(high_block) - self.blocks.index(low_block)) / 2)
+
+            containing_block = self.blocks[mid_index]
+
+            containing_block.findTransaction(t_hash=t_hash, t_ID=t_ID, t_datetime=t_datetime)
+
+
+
+        else:
+            #we have to loop through them all...
+            #starting at the end of the chain
+            pass
+
+

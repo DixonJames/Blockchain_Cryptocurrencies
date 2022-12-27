@@ -1,11 +1,11 @@
-
+import hashlib
 class MerkleTree:
     def __init__(self, transactions):
         self.transactions = transactions
         self.root = self.findRoot()
 
     def findRoot(self):
-        tree = self.transactions
+        tree = [hash(t.genHash()) for t in self.transactions]
 
         while len(tree) != 1:
             next_layer = []
@@ -16,4 +16,7 @@ class MerkleTree:
                 next_layer.append(h_val)
             tree = next_layer
 
-        return tree[0]
+        header = str(tree[0])
+        sha = hashlib.sha256()
+        sha.update(header.encode('utf-8'))
+        return sha.hexdigest()
