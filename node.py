@@ -1,9 +1,13 @@
 import hashlib
-
+import base64
 from block import Block
 from blockchain import BlockChain
 from network import Network
 from transaction import Transaction
+from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.serialization import load_der_public_key
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import hashes
 
 import time
 
@@ -29,6 +33,32 @@ class Node:
         self.blocks_mined = []
         self.other_blocks_accepted = []
         self.other_blocks_rejected = []
+
+    def verifySteakholders(self, transaction):
+        """
+        verifies ownership of the transaction
+        :param transaction:
+        :return:
+        """
+
+        indicator_signature = base64.b64decode(transaction.signature)
+        sender_public_key = load_der_public_key(base64.b64decode(transaction.sender), default_backend())
+        try:
+            sender_public_key.verify(
+                indicator_signature,
+                str(transaction.details()).encode('utf-8'),
+                padding.PSS(
+                    mgf=padding.MGF1(hashes.SHA256()),
+                    salt_length=padding.PSS.MAX_LENGTH
+                ),
+                hashes.SHA256()
+            )
+        except Exception:
+            return False
+        for client in self.network.users:
+            if client.key_pair.public_key_str == transaction.sender:
+                return client
+
 
     def receive_transactions(self):
         """
@@ -222,14 +252,14 @@ class Miner(Node):
                 print(current_hash)
 
             self.blocks_mined.append(new_block)
-            time.sleep(1)
+            #time.sleep(1)
 
         else:
             # we have failed to mine a valid proof in time have lost the race
             # need to give up on our own eforts and validate the new block
 
             # wait for new block to be uploaded
-            time.sleep(1)
+            time.sleep(0.1)
             # get sucsessful block minned form network
             unvalidated_new_block = self.network.broadcast_blocks[-1]
 

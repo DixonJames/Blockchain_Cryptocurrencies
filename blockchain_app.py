@@ -46,7 +46,9 @@ class AppWebpage:
         self.port = port
         self.network = network
 
-        # self.current_user = None
+        bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
+        self.node = Miner(chain=bc, network=self.network)
+        self.transactions = None
 
         self.apply_rules()
 
@@ -58,8 +60,33 @@ class AppWebpage:
         """
 
         self.app.add_url_rule("/create-user", "create_user", self.create_user)
+        self.app.add_url_rule("/list-user", "list_user", self.list_users)
+
+        self.app.add_url_rule("/3a", "3a", self.q3a)
+        self.app.add_url_rule("/3b", "3b", self.q3b)
+
+        self.app.add_url_rule("/4", "4", self.q4)
+        self.app.add_url_rule("/4_stats", "4 stats", self.q4_stats)
+
+        self.app.add_url_rule("/5t", "5t", self.q5t)
+        self.app.add_url_rule("/5a", "5a", self.q5a)
+        self.app.add_url_rule("/5b", "5b", self.q5b)
+
         self.app.add_url_rule("/get-qr", "qr", self.sendQRCode)
         self.app.add_url_rule("/", "home", self.home)
+
+    def home(self):
+        options = {"options": {"add user": "/create-user?name=",
+                               "list users": "/list-user",
+                               "Question 3a": "/3a",
+                               "Question 3b": "/3b",
+                               "Question 4 mine": "/4?difficulty=[select 1-10]",
+                               "Question 4 stats": "/4_stats?difficulty=[select 1-10]",
+                               "Question 5_create_transactions": "/5t",
+                               "Question 5_time_transactions_trace_verify": "/5a?args=<transaction hash>@<transaction id>@<str transaction time>",
+                               "Question 5_trace_all_stats": "/5b", },
+                   "advice": "i recommend noting down returned information for later input use"}
+        return jsonify(options)
 
     def run_debug(self):
         """
@@ -76,9 +103,64 @@ class AppWebpage:
         port = int(os.environ.get("PORT", self.port))
         self.app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
-    def home(self):
-        options = {"add user": "/create-user?name="}
-        return jsonify(options)
+    def q3a(self):
+        return jsonify(q_3a())
+
+    def q3b(self):
+        return jsonify(q_3b())
+
+    def q4(self):
+        difficulty = request.args.get("difficulty")
+        details = full_transaction_addition_mine(difficulty=int(difficulty))
+
+        return jsonify(details)
+
+    def q4_stats(self):
+        difficulty = request.args.get("difficulty")
+        times, hashes, energy, details = q4(redundancy=1, leading_zeros=int(difficulty), energy=False)
+
+        return jsonify(details)
+
+    def q5t(self):
+        """
+        creates transactions and returns the details
+        :return:
+        """
+
+        transaction_details, transactions = q5_create_transacitons(self.node)
+        self.transactions = transactions
+        rv = {"number of transactions": len(self.transactions),
+                        "number of blocks": len(self.node.chain.blocks)}
+
+        return jsonify([rv, {"transactions":transaction_details}])
+
+    def q5a(self):
+        """
+        track one transaction
+        :return:
+        """
+        args = str(request.args.get("args")).split("@")
+
+        hash = args[0]
+        id = args[1]
+        time = args[2]
+
+        traced = q5_trace_transaction(self.node, t_h=hash, t_id=id, t_t=time)
+        traced["sender"] = traced["sender"].details()
+        return jsonify(traced)
+
+    def q5b(self):
+        """
+        track all transactions and fidn the mean time
+        :return:
+        """
+        if self.transactions is None:
+            return jsonify({"error": "please create some transactions first"})
+        trace_results = q5_trace_all_transactions(node=self.node, transactions=self.transactions)
+
+        return jsonify({"number of transactions": len(trace_results["transaction"]),
+                        "number of blocks": len(self.node.chain.blocks),
+                        "average time to track": trace_results["average_time"]})
 
     def create_user(self, ):
         error = None
@@ -113,6 +195,12 @@ class AppWebpage:
                             </html>"""
 
         return render_template_string(page)
+
+    def list_users(self):
+        users = []
+        for u in self.network.users:
+            users.append(u.details())
+        return jsonify(users)
 
     def sendQRCode(self, ):
         name = request.args.get("id")
@@ -153,9 +241,10 @@ def q_3b():
 
     client_a.balance = 100
     item_to_send = Item(10)
+    null_item = Item(value=None)
 
     client_a.sendTransaction(receivers=client_b.key_pair.public_key_str,
-                             inputs=[item_to_send],
+                             inputs=[null_item],
                              outputs=[item_to_send])
 
     # add some more transactions for submit!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -173,8 +262,15 @@ def q_3b():
     return results
 
 
-def q4(redundancey=5, leading_zeros=10):
-    results = [[None for i in range(redundancey)] for j in range(leading_zeros)]
+def q4(redundancy=5, leading_zeros=10, energy=True):
+    """
+
+    :param redundancy: number of times experiment looped for each difficulty level
+    :param leading_zeros: difficulty level of hash to be found
+    :param energy: weather to track energy usage [REQUIRES TO BE RUN AS SUPERUSER]
+    :return:
+    """
+    results = [[None for i in range(redundancy)] for j in range(leading_zeros)]
 
     for lz in range(1, leading_zeros):
         network = Network()
@@ -193,7 +289,7 @@ def q4(redundancey=5, leading_zeros=10):
         # analysis of time, hashes comuted, and energy usage
 
         continue_calc = True
-        for i in range(redundancey):
+        for i in range(redundancy):
             if continue_calc:
 
                 # randomise the nonces so that have different proof starting points
@@ -206,8 +302,11 @@ def q4(redundancey=5, leading_zeros=10):
 
                 # 4)c) find the energy that is used
                 try:
-                    # energy_res = energyusage.evaluate(node_a.mine, 1, True, energyOutput=True, printToScreen=False)
-                    energy_res = [0, lz, 0]
+                    if energy:
+                        energy_res = energyusage.evaluate(node_a.mine, 1, True, energyOutput=True, printToScreen=False)
+
+                    else:
+                        energy_res = [0, 0, 0]
                 except:
                     energy_res = [0, 0, 0]
 
@@ -219,9 +318,36 @@ def q4(redundancey=5, leading_zeros=10):
         # calcualte averages and plots
     times = [([i[0] for i in d]) for d in results if d[0] is not None]
     hashes = [([i[1] for i in d]) for d in results if d[0] is not None]
-    energy = [([i[2] for i in d]) for d in results if d[0] is not None]
+    if energy:
+        energy = [([i[2] for i in d]) for d in results if d[0] is not None]
 
-    return times, hashes, energy
+    # 4a)
+    t_mean = np.mean(times, axis=1)
+    t_variance = np.var(times, axis=1)
+    t_std = np.std(times, axis=1)
+
+    # 4b)
+    h_mean = np.mean(hashes, axis=1)
+    h_variance = np.var(hashes, axis=1)
+    h_std = np.std(hashes, axis=1)
+
+    if energy:
+        # 4c)
+        e_mean = np.mean(energy, axis=1)
+        e_variance = np.var(energy, axis=1)
+        e_std = np.std(energy, axis=1)
+
+    details = {"time mean": t_mean,
+               "hash number mean": h_mean,
+               "energy mean": e_mean,
+               "time variance": t_variance,
+               "hash number variance": h_variance,
+               "energy variance": e_variance,
+               "time std": t_std,
+               "hash number std": h_std,
+               "energy std": e_std
+               }
+    return times, hashes, energy, details
 
 
 def q4_display(times, hashes, energy, graph=True):
@@ -306,13 +432,13 @@ def q4_display(times, hashes, energy, graph=True):
         plt.show()
 
 
-def q5_verify():
+def full_transaction_addition_mine(difficulty=1):
     """
     functions that shows vlidation of transactions in an added block
     :return:
     """
     network = Network()
-    bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
+    bc = BlockChain(previous_chain=None, difficulty=difficulty, block_length=99)
 
     node_a = Miner(chain=bc, network=network)
 
@@ -339,28 +465,30 @@ def q5_verify():
     return results
 
 
-def q5():
+def q5_create_transacitons(node):
     """
     functions that shows vlidation of transactions in an added block
-    :return:
+    :return: average time taken to find transaction
     """
     transactions = []
-    network = Network()
+
     bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
 
-    node_a = Miner(chain=bc, network=network)
+    node_a = node
 
     client_a = Client(name="Alice", network=network)
     client_b = Client(name="Bob", network=network)
     client_c = Client(name="charlie", network=network)
+    network.users.extend([client_c, client_b, client_a])
 
     item_to_send = Item(value=10)
     null_item = Item(value=None)
 
+    # add a bunch of linked transactions
+
     i1 = Item(value=10)
     i2 = Item(value=10)
     i3 = Item(value=10)
-
 
     t_h, t1 = client_a.sendTransaction(receivers=[client_a.key_pair.public_key_str],
                                        inputs=[Item(value=None)],
@@ -372,12 +500,10 @@ def q5():
                                        inputs=[Item(value=None)],
                                        outputs=[i3])
 
-    transactions.extend([t1,t2,t3])
+    transactions.extend([t1, t2, t3])
 
     node_a.receive_transactions()
     node_a.mine(attempts=1)
-
-
 
     for i in range(100):
         o1 = Item(value=5)
@@ -430,19 +556,75 @@ def q5():
 
         node_a.mine(attempts=1)
 
-    transaction_details = {f"t_{i.genHash()}": i.details() for i in node_a.chain.blocks[-1].transactions}
+    t_details = dict()
+    for t in transactions:
+        t_details.update({f"{t.id}": {"id": t.id,
+                                      "hash": t.genHash(),
+                                      "time": str(t.time)}})
 
-    results = {"valid nonce": node_a.chain.blocks[-1].nonce,
-               "block hash": node_a.chain.blocks[-1].genHash(),
-               "transactions": transaction_details}
+    return t_details, transactions
 
+
+def q5_trace_transaction(node, t_h, t_t, t_id):
+    """
+
+    :param node: node that contains a copy of the blockchain containing the transaction
+    :param t_h: transaction hash
+    :param t_t: transaciton time
+    :param t_id: transaction id
+    :return:
+    """
+
+    st = time.perf_counter()
+    f_t = node.chain.findTransaction(t_hash=t_h, t_datetime=datetime.strptime(str(t_t), "%Y-%m-%d %H:%M:%S.%f"),
+                                     t_ID=t_id)
+
+    # verify steakholders and find sender
+    sender = node.verifySteakholders(f_t)
+
+    result = {"transaction": None,
+              "sender": None,
+              "time": None}
+
+    if False != sender:
+        result["transaction"] = f_t.details()
+        result["sender"] = sender
+        result["time"] = (time.perf_counter() - st)
+
+    return result
+
+
+def q5_trace_all_transactions(node, transactions):
+    results = {"transaction": [],
+               "sender": [],
+               "average_time": []}
+    for t in transactions:
+        st = time.perf_counter()
+        f_t = node.chain.findTransaction(t_hash=t.genHash(), t_datetime=t.time, t_ID=t.id)
+
+        # verify steakholders and find sender
+        sender = node.verifySteakholders(f_t)
+
+        if False != sender:
+            results["transaction"].append(f_t)
+            results["sender"].append(sender)
+            results["average_time"].append(time.perf_counter() - st)
+    results["average_time"] = sum(results["average_time"]) / len(results["average_time"])
     return results
 
 
 if __name__ == '__main__':
+    network = Network()
+    """bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
+    node = Miner(chain=bc, network=network)
     # q5
-    q5()
-    """q5_verify()"""
+
+    transaction_details, transactions = q5_create_transacitons(node)
+
+    to_trace = transaction_details[list(transaction_details.keys())[0]]
+    traced = q5_trace_transaction(node, t_h=to_trace["hash"], t_id=to_trace["id"], t_t=to_trace["time"])
+
+    trace_results = q5_trace_all_transactions(node=node, transactions=transactions)"""
 
     # q4
     """times, hashes, energy = q4(redundancey=5, leading_zeros=4)
@@ -455,3 +637,6 @@ if __name__ == '__main__':
     """print("q_3b")
     print(q_3b())
     print()"""
+
+    app_page = AppWebpage(host_ip="0.0.0.0", port="5555", network=network)
+    app_page.run_debug()

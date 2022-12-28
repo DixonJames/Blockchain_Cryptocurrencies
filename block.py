@@ -2,6 +2,7 @@ import base64
 import hashlib
 import uuid
 from datetime import datetime
+import math
 
 from merkleTree import MerkleTree
 from transaction import Transaction
@@ -48,10 +49,7 @@ class Block:
         # add transactions
         self._addTransactions(transactions=self.input_transactions)
 
-
-
-
-        #self.verifyAllTransactions()
+        # self.verifyAllTransactions()
 
         # generate the hash
         self.hash = self.genHash()
@@ -135,7 +133,6 @@ class Block:
         # ensures that details written by sender
         detail_check = self.verify_transaction_details(transaction=transaction)
 
-
         # check that inputs go to same as signature of indicator
         input_items = transaction.inputs
         for i in input_items:
@@ -149,19 +146,15 @@ class Block:
 
                 t = self.chain.blocks[transaction_block_i].transactions[transaction_index]
 
-
-                #go though outputs
+                # go though outputs
                 found = False
                 for output in t.outputs:
                     if output.recipient == transaction.sender:
                         found = True
 
-
-
-                if not(found):
+                if not (found):
                     # didn't find the item in the transaction
                     return False
-
 
         return True
 
@@ -194,25 +187,46 @@ class Block:
             print(f"cant find individual transction without {t_hash} or {t_ID}")
             return None
 
-        self.transactions.sort(key=lambda x: x.time_stamp)
+        self.transactions.sort(key=lambda x: x.time)
+        found_transaction = None
 
         # look at t_datetime, do a binary search though the block's min transaction times
         if t_datetime is not None:
             target_time = t_datetime
-            low_time = self.transactions[0].time
-            high_time = self.transactions[-1].time
+            low_time = self.transactions[0]
+            high_time = self.transactions[-1]
 
             mid_index = int(len(self.transactions) / 2)
 
-            while not (low_time <= target_time and high_time >= target_time):
-                if self.transactions[mid_index].first_transaction_time <= target_time:
-                    low_time = self.transactions[mid_index].first_transaction_time
-                elif self.transactions[mid_index].last_transaction_time >= target_time:
-                    high_time = self.transactions[mid_index].last_transaction_time
+            while not (self.transactions[mid_index].time == target_time or
+                       low_time.time == target_time or
+                       high_time.time == target_time):
 
+                if self.transactions[mid_index].time < target_time:
+                    low_time = self.transactions[mid_index]
+                elif self.transactions[mid_index].time >= target_time:
+                    high_time = self.transactions[mid_index]
+
+                mid_index = self.transactions.index(low_time) + math.ceil((self.transactions.index(high_time) - self.transactions.index(low_time)) / 2)
+
+            if self.transactions[mid_index].time == target_time:
+                found_transaction = self.transactions[mid_index]
+            elif low_time.time == target_time:
+                found_transaction = low_time
+            elif high_time.time == target_time:
+                found_transaction = high_time
+
+            if found_transaction.genHash() == t_hash and str(found_transaction.id) == str(t_ID):
+                return found_transaction
 
 
         else:
-            # we have to loop through them all...
-            # starting at the end of the chain
-            pass
+            for t in self.transactions:
+                if t.genHash() == t_hash or t.id == t_ID:
+                    return found_transaction
+
+        for t in self.transactions:
+            if t.genHash() == t_hash or t.id == t_ID:
+                return found_transaction
+
+        return None
