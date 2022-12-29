@@ -140,6 +140,13 @@ class BlockChain:
         return True
 
     def findTransaction(self, t_hash=None, t_ID=None, t_datetime=None):
+        """
+        finds a transaction on the chain via a binary search method
+        :param t_hash:
+        :param t_ID:
+        :param t_datetime:
+        :return:
+        """
         if t_ID is None and t_hash is None:
             print(f"cant find individual transction without {t_hash} or {t_ID}")
             return None

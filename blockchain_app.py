@@ -166,7 +166,7 @@ class AppWebpage:
         error = None
 
         name = request.args.get("name")
-        new_user = Client(name)
+        new_user = Client(name=name, network=self.network)
         self.network.users.append(new_user)
 
         details = new_user.details()
@@ -216,6 +216,15 @@ def start_interactive_app():
     wp = AppWebpage(host_ip="0.0.0.0", port=5000)
     wp.run_debug()
 
+def q_2a():
+    names = ["farmer", "manufacturer", "customer", "retailer"]
+
+    for name in names:
+        new_user = Client(name=name, network=network)
+        network.users.append(new_user)
+
+        details = new_user.details()
+        print(details)
 
 def q_3a():
     bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
@@ -236,18 +245,45 @@ def q_3b():
 
     node_a = Miner(chain=bc, network=network)
 
-    client_a = Client(name="Alice", network=network)
-    client_b = Client(name="Bob", network=network)
+    client_a = Client(name="farmer", network=network)
+    client_b = Client(name="factory", network=network)
+    client_c = Client(name="retailer", network=network)
+    client_d = Client(name="customer", network=network)
 
-    client_a.balance = 100
-    item_to_send = Item(10)
     null_item = Item(value=None)
+    raw_material = Item(10, description="raw material")
+    manufactured_goods = Item(10, description="manufactured material")
+    product = Item(10, description="product")
 
-    client_a.sendTransaction(receivers=client_b.key_pair.public_key_str,
+
+    client_a.sendTransaction(receivers=[client_b.key_pair.public_key_str],
                              inputs=[null_item],
-                             outputs=[item_to_send])
+                             outputs=[raw_material])
 
-    # add some more transactions for submit!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    client_b.sendTransaction(receivers=[client_c.key_pair.public_key_str],
+                             inputs=[raw_material],
+                             outputs=[manufactured_goods])
+
+    client_c.sendTransaction(receivers=[client_d.key_pair.public_key_str],
+                             inputs=[manufactured_goods],
+                             outputs=[product])
+
+
+
+    client_d.sendTransaction(receivers=[client_c.key_pair.public_key_str],
+                             inputs=[null_item],
+                             outputs=[Item(10, description="payment")])
+
+    client_c.sendTransaction(receivers=[client_b.key_pair.public_key_str],
+                             inputs=[null_item],
+                             outputs=[Item(10, description="payment")])
+
+    client_b.sendTransaction(receivers=[client_a.key_pair.public_key_str],
+                             inputs=[null_item],
+                             outputs=[Item(10, description="payment")])
+
+
+
 
     node_a.receive_transactions()
 
@@ -257,6 +293,7 @@ def q_3b():
 
     results = {"valid nonce": node_a.chain.blocks[-1].nonce,
                "block hash": node_a.chain.blocks[-1].genHash(),
+               "previous block hash": node_a.chain.blocks[-1].previous_block_hash,
                "transactions": transaction_details}
 
     return results
@@ -615,6 +652,7 @@ def q5_trace_all_transactions(node, transactions):
 
 if __name__ == '__main__':
     network = Network()
+    #q_2a()
     """bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
     node = Miner(chain=bc, network=network)
     # q5

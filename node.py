@@ -239,13 +239,15 @@ class Miner(Node):
             new_block = candidate_block
             candidate_block.changeNonce(nonce=proof)
             candidate_block.setTransactionBlockHash()
-            candidate_block.verifyAllTransactions()
+            # add the new block to its own chain
+            accepted = self.addBlock(new_block)
+            if accepted:
+                candidate_block.verifyAllTransactions()
 
             # broadcast the new block along with the new valid proof
             self.network.broadcast_blocks.append(new_block)
 
-            # add the new block to its own chain
-            accepted = self.addBlock(new_block)
+
             if not accepted:
                 print("ERROR - self mined block not accepted")
             else:

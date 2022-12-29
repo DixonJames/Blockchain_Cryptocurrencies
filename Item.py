@@ -3,7 +3,7 @@ import uuid
 
 
 class Item:
-    def __init__(self, value, recipient=None):
+    def __init__(self, value, recipient=None, description=None):
         self.id = uuid.uuid4()
 
         if value is not None:
@@ -15,7 +15,7 @@ class Item:
         if self.value == -1:
             self.description = "currency creation item"
         else:
-            self.description = None
+            self.description = description
 
         self.transaction_hash = None
         self.block_hash = None
