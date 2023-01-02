@@ -130,9 +130,9 @@ class AppWebpage:
         transaction_details, transactions = q5_create_transacitons(self.node)
         self.transactions = transactions
         rv = {"number of transactions": len(self.transactions),
-                        "number of blocks": len(self.node.chain.blocks)}
+              "number of blocks": len(self.node.chain.blocks)}
 
-        return jsonify([rv, {"transactions":transaction_details}])
+        return jsonify([rv, {"transactions": transaction_details}])
 
     def q5a(self):
         """
@@ -216,6 +216,7 @@ def start_interactive_app():
     wp = AppWebpage(host_ip="0.0.0.0", port=5000)
     wp.run_debug()
 
+
 def q_2a():
     names = ["farmer", "manufacturer", "customer", "retailer"]
 
@@ -225,6 +226,7 @@ def q_2a():
 
         details = new_user.details()
         print(details)
+
 
 def q_3a():
     bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
@@ -255,7 +257,6 @@ def q_3b():
     manufactured_goods = Item(10, description="manufactured material")
     product = Item(10, description="product")
 
-
     client_a.sendTransaction(receivers=[client_b.key_pair.public_key_str],
                              inputs=[null_item],
                              outputs=[raw_material])
@@ -268,8 +269,6 @@ def q_3b():
                              inputs=[manufactured_goods],
                              outputs=[product])
 
-
-
     client_d.sendTransaction(receivers=[client_c.key_pair.public_key_str],
                              inputs=[null_item],
                              outputs=[Item(10, description="payment")])
@@ -281,9 +280,6 @@ def q_3b():
     client_b.sendTransaction(receivers=[client_a.key_pair.public_key_str],
                              inputs=[null_item],
                              outputs=[Item(10, description="payment")])
-
-
-
 
     node_a.receive_transactions()
 
@@ -652,8 +648,8 @@ def q5_trace_all_transactions(node, transactions):
 
 if __name__ == '__main__':
     network = Network()
-    #q_2a()
-    """bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
+    # q_2a()
+    bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
     node = Miner(chain=bc, network=network)
     # q5
 
@@ -662,7 +658,7 @@ if __name__ == '__main__':
     to_trace = transaction_details[list(transaction_details.keys())[0]]
     traced = q5_trace_transaction(node, t_h=to_trace["hash"], t_id=to_trace["id"], t_t=to_trace["time"])
 
-    trace_results = q5_trace_all_transactions(node=node, transactions=transactions)"""
+    trace_results = q5_trace_all_transactions(node=node, transactions=transactions)
 
     # q4
     """times, hashes, energy = q4(redundancey=5, leading_zeros=4)

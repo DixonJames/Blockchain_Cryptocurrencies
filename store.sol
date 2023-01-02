@@ -7,10 +7,8 @@ contract Store{
     mapping(address => bool) public admins;
     // hash dict to items owned by store
     mapping(string => Item) public inventory;
-    address payable Owner;
-    address creator;
-
-
+    address  payable public Owner;
+    address  public creator;
 
     constructor() {
         Owner = payable(msg.sender); 
@@ -19,27 +17,41 @@ contract Store{
  
     }
 
+    // events to anaounce
+    event daysLeft(string id, uint daysl);
+    event newAdmin(address admin_addr);
+    event removedAdmin(address admin_addr);
+    event payIn(address sender, uint amount);
+    event newItem(string id, uint amount);
+    event removedItem(string id, uint amount);
+    event itemCheckResult(string id, bool result);
+    event itemTransfered(string id, address sender, address receiver);
+    
+
+
 
 
     // access modifiers:
-    modifier manager_access(){
+    modifier manager_access{
         require(msg.sender == creator);
         _;
     }
-    modifier admin_access(){
+    modifier admin_access{
         // checks to see if the senders details are in the admin hashdict
-        require(admins[msg.sender] == true);
+        //require(admins[msg.sender] == true);
 
         _;
     }
 
 
     // functions for the owner to add/remove admins
-    function addAdmin(address new_admin) public manager_access(){
+    function addAdmin(address new_admin) public manager_access{
         admins[new_admin] = true;
+        emit newAdmin(new_admin);
     } 
-    function removeAdmin(address new_admin) public manager_access(){
+    function removeAdmin(address new_admin) public manager_access{
         admins[new_admin] = false;
+        emit removedAdmin(new_admin);
     } 
 
 
@@ -68,6 +80,7 @@ contract Store{
     // transfer eth to the store owner from public
     function transferIn(uint _amount) public payable{ 
         Owner.transfer(_amount);
+        emit payIn(msg.sender, _amount);
     }
 
 
@@ -75,18 +88,22 @@ contract Store{
     function addItem(string memory  _id, string memory _name, uint _value, uint _quantity, uint days_fresh) public admin_access
     {   
         // if alreadu in inventry add stock
-        if (inventory[_name].value != 0){
-            Item memory current_item = inventory[_name];
+        if (inventory[_id].value != 0){
+            
+            Item memory current_item = inventory[_id];
             current_item.quantity += _quantity;
             current_item.availability = i_availability.available;
 
-            inventory[_name] = current_item;
+            inventory[_id] = current_item;
+            emit newItem( _id,  current_item.quantity);
         }
         else{
             // if not already in invetory craete and add the item to hashdict
             uint time_fresh = 1 hours * 24 * days_fresh;
-            inventory[_name] = Item(_id, _name, i_availability.available, address(this), _value, _quantity, block.timestamp, time_fresh, termination_procedure.recycle);
+            inventory[_id] = Item(_id, _name, i_availability.available, address(this), _value, _quantity, block.timestamp, time_fresh, termination_procedure.recycle);
+            emit newItem( _id,  _quantity);
         }
+        
     }
 
     // removes the item stock from hahsdict. also changes availablity
@@ -100,21 +117,26 @@ contract Store{
             toRemove.availability = i_availability.no_stock;
         }
 
-         inventory[_id] = toRemove;
+        inventory[_id] = toRemove;
+        emit removedItem(_id, quantity);
     }
     
     // check that item exists with enough stock
-    function checkItem(string memory _id, uint quantity) public view admin_access returns (bool) {
+    function checkItem(string memory _id, uint quantity) public  admin_access returns (bool) {
         Item memory i_ref = inventory[_id];
-        if (i_ref.store == address(this)){
+        if (i_ref.store != address(this)){
+            emit itemCheckResult(_id, false);
             return false;
         }
         if (i_ref.availability == i_availability.unavailable){
+            emit itemCheckResult(_id, false);
             return false;
         }
         if (i_ref.quantity < quantity){
+            emit itemCheckResult(_id, false);
             return false;
         }
+        emit itemCheckResult(_id, true);
         return true;
 
     }
@@ -125,19 +147,19 @@ contract Store{
         Item memory i_ref = inventory[item_id];
 
         Store transfer_store = Store(store_address);
-        require(admins[address(this)] == true);
 
         if (checkItem(item_id, quantity)){
             // remove from our stock
             removeItem(item_id, quantity);
             // add to other stores stock
             transfer_store.addItem(item_id, i_ref.name, i_ref.value, quantity, i_ref.time_fresh);
+            emit itemTransfered(item_id, msg.sender, store_address);
         }
 
     }
 
     // finds the number of days left untill an item expires
-    function itemdaysLeft(string memory item_id) view public admin_access returns (uint){
+    function itemdaysLeft(string memory item_id)  public admin_access returns (uint){
         uint time_left = (inventory[item_id].creation_date + inventory[item_id].time_fresh) - block.timestamp;
         if(time_left < 0){
             return 0;
@@ -146,11 +168,12 @@ contract Store{
         if(val == 0){
             val += 1;
         }
+        emit daysLeft(item_id, val);
         return val;
     }
 
     // checks to see if the item can be termainted
-    // if it can be termainted follows termaintion procedure accoring to the termaintion procedure
+    // if it can be termainted follows termaintion procedure accoring to the termaintion options
     function termianteItem(string memory item_id) public admin_access{
         if (itemdaysLeft(item_id) == 0){
             Item memory i_ref = inventory[item_id];
