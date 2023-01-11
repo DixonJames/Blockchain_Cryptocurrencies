@@ -14,10 +14,14 @@ class Client:
     """
 
     def __init__(self, name, network):
-        self.identifier = name
         self.key_pair = Keypair()
+        self.qr_code_dir = os.path.join(os.getcwd(), "QR_"+ self.key_pair.keyStrings()[1][10:20] + ".png")
+
+        self.identifier = name
         self.qr_code = self.genQRCOde()
         self.network = network
+
+
 
 
     def genQRCOde(self):
@@ -35,7 +39,8 @@ class Client:
         img = qr.make_image(fill_color='black',
                             back_color='white')
 
-        img.save(os.path.join(os.getcwd(), pub_key_string[:10] + ".png"), format="PNG")
+
+        img.save(self.qr_code_dir, format="PNG")
 
         return img
 
@@ -46,7 +51,7 @@ class Client:
         """
         return {"private key": self.key_pair.keyStrings()[0],
                 "wallet address": self.key_pair.keyStrings()[1],
-                "QR code": f"{self.key_pair.keyStrings()[1][:10]}.png"}
+                "QR code": f"{self.qr_code_dir}"}
 
     def sendTransaction(self, receivers, inputs: [int], outputs: [Item]):
         reciver_i = 0

@@ -30,6 +30,7 @@ from block import Block
 from blockchain import BlockChain
 from node import Miner, Node
 from network import Network
+import json, pickle
 
 app = Flask(__name__)
 
@@ -117,7 +118,7 @@ class AppWebpage:
 
     def q4_stats(self):
         difficulty = request.args.get("difficulty")
-        times, hashes, energy, details = q4(redundancy=1, leading_zeros=int(difficulty), energy=False)
+        times, hashes, energy, details = q4(redundancy=1, leading_zeros=int(difficulty), energy_lst=False)
 
         return jsonify(details)
 
@@ -229,7 +230,7 @@ def q_2a():
 
 
 def q_3a():
-    bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
+    bc = BlockChain(previous_chain=None, difficulty=5, block_length=99)
     genesis = bc.blocks[-1]
 
     return {"time_stamp": genesis.time_stamp,
@@ -237,13 +238,14 @@ def q_3a():
             "previous_block_hash": genesis.previous_block_hash,
             "nonce": genesis.nonce,
             "genesis_hash": genesis.genHash(),
+            "genesis_ID": genesis.id,
             "genesis_transaction": genesis.transactions[0].details(),
             }
 
 
 def q_3b():
     network = Network()
-    bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
+    bc = BlockChain(previous_chain=None, difficulty=5, block_length=99)
 
     node_a = Miner(chain=bc, network=network)
 
@@ -306,6 +308,7 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
     results = [[None for i in range(redundancy)] for j in range(leading_zeros)]
 
     for lz in range(1, leading_zeros):
+        print(f"zeros: {lz}")
         network = Network()
         bc = BlockChain(previous_chain=None, difficulty=lz, block_length=99)
 
@@ -315,7 +318,7 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
         client_b = Client(name="Bob", network=network)
         client_a.balance = 100
         item_to_send = Item(random.randint(1, 100))
-        client_a.sendTransaction(receivers=client_b.key_pair.public_key_str,
+        client_a.sendTransaction(receivers=[client_b.key_pair.public_key_str],
                                  inputs=[item_to_send],
                                  outputs=[item_to_send])
 
@@ -323,6 +326,7 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
 
         continue_calc = True
         for i in range(redundancy):
+            print(f"{i}/{redundancy}")
             if continue_calc:
 
                 # randomise the nonces so that have different proof starting points
@@ -332,6 +336,7 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
 
                 # 4)a) 4)b) get hashes computed and the time taken
                 time_taken, hashes_computed = node_a.mine(attempts=1, track=True)
+                print(time_taken)
 
                 # 4)c) find the energy that is used
                 try:
@@ -348,27 +353,33 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
 
                 results[lz - 1][i] = (time_taken, hashes_computed, energy_res[1])
 
-        # calcualte averages and plots
-    times = [([i[0] for i in d]) for d in results if d[0] is not None]
-    hashes = [([i[1] for i in d]) for d in results if d[0] is not None]
+    # calcualte averages and plots
+    time_list = [([i[0] for i in d]) for d in results if d[0] is not None]
+    hashes_lst = [([i[1] for i in d]) for d in results if d[0] is not None]
+
     if energy:
-        energy = [([i[2] for i in d]) for d in results if d[0] is not None]
+        energy_lst = [([i[2] for i in d]) for d in results if d[0] is not None]
 
     # 4a)
-    t_mean = np.mean(times, axis=1)
-    t_variance = np.var(times, axis=1)
-    t_std = np.std(times, axis=1)
+    t_mean = np.mean(time_list, axis=1)
+    t_variance = np.var(time_list, axis=1)
+    t_std = np.std(time_list, axis=1)
 
     # 4b)
-    h_mean = np.mean(hashes, axis=1)
-    h_variance = np.var(hashes, axis=1)
-    h_std = np.std(hashes, axis=1)
+    h_mean = np.mean(hashes_lst, axis=1)
+    h_variance = np.var(hashes_lst, axis=1)
+    h_std = np.std(hashes_lst, axis=1)
 
     if energy:
         # 4c)
-        e_mean = np.mean(energy, axis=1)
-        e_variance = np.var(energy, axis=1)
-        e_std = np.std(energy, axis=1)
+        e_mean = np.mean(energy_lst, axis=1)
+        e_variance = np.var(energy_lst, axis=1)
+        e_std = np.std(energy_lst, axis=1)
+    else:
+        e_mean = 0
+        e_variance = 0
+        e_std = 0
+        energy_lst = []
 
     details = {"time mean": t_mean,
                "hash number mean": h_mean,
@@ -380,7 +391,12 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
                "hash number std": h_std,
                "energy std": e_std
                }
-    return times, hashes, energy, details
+    res = {"times list": time_list, "hashes list": hashes_lst, "energy list": energy_lst, "details": details}
+
+    with open('filename.pickle', 'wb') as file:
+        pickle.dump(res, file, protocol=pickle.HIGHEST_PROTOCOL)
+
+    return time_list, hashes_lst, energy_lst, details
 
 
 def q4_display(times, hashes, energy, graph=True):
@@ -648,29 +664,33 @@ def q5_trace_all_transactions(node, transactions):
 
 if __name__ == '__main__':
     network = Network()
-    # q_2a()
     bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
     node = Miner(chain=bc, network=network)
+
+    # q2
+    # q_2a()
+
+    # q3
+    """
+    print(q_3a())
+    print()"""
+
+    """
+    print(q_3b())
+    print()"""
+
     # q5
 
-    transaction_details, transactions = q5_create_transacitons(node)
+    """    transaction_details, transactions = q5_create_transacitons(node)
 
     to_trace = transaction_details[list(transaction_details.keys())[0]]
     traced = q5_trace_transaction(node, t_h=to_trace["hash"], t_id=to_trace["id"], t_t=to_trace["time"])
 
-    trace_results = q5_trace_all_transactions(node=node, transactions=transactions)
+    trace_results = q5_trace_all_transactions(node=node, transactions=transactions)"""
 
     # q4
-    """times, hashes, energy = q4(redundancey=5, leading_zeros=4)
-    q4_display(times, hashes, energy)"""
-
-    """print("q_3a")
-    print(q_3a())
-    print()"""
-
-    """print("q_3b")
-    print(q_3b())
-    print()"""
+    """times, hashes, energy = q4(redundancy=5, leading_zeros=8, energy=True)"""
+    # q4_display(times, hashes, energy)
 
     app_page = AppWebpage(host_ip="0.0.0.0", port="5555", network=network)
     app_page.run_debug()

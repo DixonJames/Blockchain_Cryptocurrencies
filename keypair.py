@@ -3,6 +3,7 @@ from cryptography.hazmat.primitives import serialization, hashes
 
 import base64
 
+
 class Keypair:
     def __init__(self):
         self.priv_key, self.public_key = self.createKeyPair()
@@ -67,4 +68,3 @@ class Keypair:
             return True
         except Exception:
             return False
-
