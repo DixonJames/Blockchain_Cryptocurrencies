@@ -307,26 +307,30 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
     """
     results = [[None for i in range(redundancy)] for j in range(leading_zeros)]
 
-    for lz in range(1, leading_zeros):
+    for lz in range(1, leading_zeros+1):
         print(f"zeros: {lz}")
-        network = Network()
-        bc = BlockChain(previous_chain=None, difficulty=lz, block_length=99)
 
-        # setup an irrelevant transaction
-
-        client_a = Client(name="Alice", network=network)
-        client_b = Client(name="Bob", network=network)
-        client_a.balance = 100
-        item_to_send = Item(random.randint(1, 100))
-        client_a.sendTransaction(receivers=[client_b.key_pair.public_key_str],
-                                 inputs=[item_to_send],
-                                 outputs=[item_to_send])
 
         # analysis of time, hashes comuted, and energy usage
 
         continue_calc = True
         for i in range(redundancy):
             print(f"{i}/{redundancy}")
+
+            network = Network()
+            bc = BlockChain(previous_chain=None, difficulty=lz, block_length=99)
+
+            # setup an irrelevant transaction
+
+            client_a = Client(name="Alice", network=network)
+            client_b = Client(name="Bob", network=network)
+            client_a.balance = 100
+            item_to_send = Item(random.randint(1, 100))
+            client_a.sendTransaction(receivers=[client_b.key_pair.public_key_str],
+                                     inputs=[item_to_send],
+                                     outputs=[item_to_send])
+
+
             if continue_calc:
 
                 # randomise the nonces so that have different proof starting points
@@ -689,8 +693,12 @@ if __name__ == '__main__':
     trace_results = q5_trace_all_transactions(node=node, transactions=transactions)"""
 
     # q4
-    """times, hashes, energy = q4(redundancy=5, leading_zeros=8, energy=True)"""
-    # q4_display(times, hashes, energy)
+    #times, hashes, energy = q4(redundancy=2, leading_zeros=5, energy=True)
+    with open('filename.pickle', 'rb') as file:
+        res = pickle.load(file)
 
-    app_page = AppWebpage(host_ip="0.0.0.0", port="5555", network=network)
-    app_page.run_debug()
+
+    q4_display(res["times list"], res["hashes list"], res["energy list"])
+
+    #app_page = AppWebpage(host_ip="0.0.0.0", port="5555", network=network)
+    #app_page.run_debug()

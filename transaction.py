@@ -5,7 +5,8 @@ import uuid
 from Item import Item
 from datetime import datetime
 
-
+class Client:
+    pass
 
 class Transaction:
     """
