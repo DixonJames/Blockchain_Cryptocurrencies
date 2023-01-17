@@ -993,12 +993,13 @@ class AppWebpage:
                                "list users": "/list-user",
                                "Question 3a": "/3a",
                                "Question 3b": "/3b",
-                               "Question 4 mine": "/4?difficulty=[select 1-10]",
-                               "Question 4 stats": "/4_stats?difficulty=[select 1-10]",
+                               "Question 4 mine": "/4?difficulty=<select 1-10>",
+                               "Question 4 stats": "/4_stats?difficulty=<select 1-10>",
                                "Question 5_create_transactions": "/5t",
                                "Question 5_time_transactions_trace_verify": "/5a?args=<transaction hash>@<transaction id>@<str transaction time>",
                                "Question 5_trace_all_stats": "/5b", },
-                   "advice": "i recommend noting down returned information for later input use"}
+                   "advice": "i recommend noting down returned information for later input use",
+                   "how to use": "add the extension in options into the url for desired questions. \n make sure to add input option where prompted with <> in url"}
         return jsonify(options)
 
     def run_debug(self):
@@ -1024,13 +1025,60 @@ class AppWebpage:
 
     def q4(self):
         difficulty = request.args.get("difficulty")
-        details = full_transaction_addition_mine(difficulty=int(difficulty))
+        details = fullTransactionAdditionMine(difficulty=int(difficulty))
 
         return jsonify(details)
 
     def q4_stats(self):
         difficulty = request.args.get("difficulty")
-        times, hashes, energy, details = q4(redundancy=1, leading_zeros=int(difficulty), energy_lst=False)
+        results = q4(redundancy=1, leading_zeros=int(difficulty), energy=False)
+
+        time_list = []
+        hashes_lst = []
+        energy_lst = []
+
+        for d in results:
+            d_time = []
+            d_hash = []
+            d_energy = []
+            for i in d:
+                if (i[0] is not None) and not (np.isnan(i[0])) and (i[0] != -1):
+                    d_time.append(i[0])
+                    d_hash.append(i[1])
+                    d_energy.append(i[2])
+
+            if len(d_time) != 0:
+                time_list.append(d_time)
+                hashes_lst.append(d_hash)
+                energy_lst.append(d_energy)
+
+        # 4a)
+        t_mean = np.mean(time_list, axis=1)
+        t_variance = np.var(time_list, axis=1)
+        t_std = np.std(time_list, axis=1)
+
+        # 4b)
+        h_mean = np.mean(hashes_lst, axis=1)
+        h_variance = np.var(hashes_lst, axis=1)
+        h_std = np.std(hashes_lst, axis=1)
+
+        e_mean = np.mean(energy_lst, axis=1)
+        e_variance = np.var(energy_lst, axis=1)
+        e_std = np.std(energy_lst, axis=1)
+
+        def dificulty_display(lst):
+            return {f"difficulty {j + 1}": v for v, j in zip(list(lst), [i for i in range(len(list(lst)))])},
+
+        details = {"time mean": dificulty_display(t_mean),
+                   "hash number mean": dificulty_display(h_mean),
+                   "energy mean": dificulty_display(e_mean),
+                   "time variance": dificulty_display(t_variance),
+                   "hash number variance": dificulty_display(h_variance),
+                   "energy variance": dificulty_display(e_variance),
+                   "time std": dificulty_display(t_std),
+                   "hash number std": dificulty_display(h_std),
+                   "energy std": dificulty_display(e_std)
+                   }
 
         return jsonify(details)
 
@@ -1040,7 +1088,7 @@ class AppWebpage:
         :return:
         """
 
-        transaction_details, transactions = q5_create_transacitons(self.node)
+        transaction_details, transactions = q5CreateTransacitons(self.node)
         self.transactions = transactions
         rv = {"number of transactions": len(self.transactions),
               "number of blocks": len(self.node.chain.blocks)}
@@ -1058,7 +1106,7 @@ class AppWebpage:
         id = args[1]
         time = args[2]
 
-        traced = q5_trace_transaction(self.node, t_h=hash, t_id=id, t_t=time)
+        traced = q5TraceTransaction(self.node, t_h=hash, t_id=id, t_t=time)
         traced["sender"] = traced["sender"].details()
         return jsonify(traced)
 
@@ -1069,7 +1117,7 @@ class AppWebpage:
         """
         if self.transactions is None:
             return jsonify({"error": "please create some transactions first"})
-        trace_results = q5_trace_all_transactions(node=self.node, transactions=self.transactions)
+        trace_results = q5TraceAllTransactions(node=self.node, transactions=self.transactions)
 
         return jsonify({"number of transactions": len(trace_results["transaction"]),
                         "number of blocks": len(self.node.chain.blocks),
@@ -1121,12 +1169,12 @@ class AppWebpage:
         return send_file(name, mimetype='image/gif')
 
 
-def start_interactive_app():
+def startFlaskApp():
     """
     starts the webapp
     :return:
     """
-    wp = AppWebpage(host_ip="0.0.0.0", port=5000)
+    wp = AppWebpage(host_ip="0.0.0.0", port=5000, network=network)
     wp.run_debug()
 
 
@@ -1217,11 +1265,10 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
     :param energy: weather to track energy usage [REQUIRES TO BE RUN AS SUPERUSER]
     :return:
     """
-    results = [[None for i in range(redundancy)] for j in range(leading_zeros)]
+    results = [[(np.nan, np.nan, np.nan) for i in range(redundancy)] for j in range(leading_zeros)]
 
-    for lz in range(1, leading_zeros+1):
-        print(f"zeros: {lz}")
-
+    for lz in range(1, leading_zeros + 1):
+        print(f"Leading 0s: {lz}")
 
         # analysis of time, hashes comuted, and energy usage
 
@@ -1242,7 +1289,6 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
                                      inputs=[item_to_send],
                                      outputs=[item_to_send])
 
-
             if continue_calc:
 
                 # randomise the nonces so that have different proof starting points
@@ -1252,13 +1298,18 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
 
                 # 4)a) 4)b) get hashes computed and the time taken
                 time_taken, hashes_computed = node_a.mine(attempts=1, track=True)
+                if time_taken == -1:
+                    print("It’s very difficult to find nonce")
                 print(time_taken)
 
                 # 4)c) find the energy that is used
                 try:
                     if energy:
-                        energy_res = energyusage.evaluate(node_a.mine, 1, True, energyOutput=True, printToScreen=False)
-
+                        if time_taken != -1:
+                            energy_res = energyusage.evaluate(node_a.mine, 1, True, energyOutput=True,
+                                                              printToScreen=False)
+                        else:
+                            energy_res = [0, 0, 0]
                     else:
                         energy_res = [0, 0, 0]
                 except:
@@ -1269,12 +1320,28 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
 
                 results[lz - 1][i] = (time_taken, hashes_computed, energy_res[1])
 
-    # calcualte averages and plots
-    time_list = [([i[0] for i in d]) for d in results if d[0] is not None]
-    hashes_lst = [([i[1] for i in d]) for d in results if d[0] is not None]
+    return results
 
-    if energy:
-        energy_lst = [([i[2] for i in d]) for d in results if d[0] is not None]
+
+def q4Display(results, graph=True, energy=True):
+    time_list = []
+    hashes_lst = []
+    energy_lst = []
+
+    for d in results:
+        d_time = []
+        d_hash = []
+        d_energy = []
+        for i in d:
+            if (i[0] is not None) and not (np.isnan(i[0])) and (i[0] != -1):
+                d_time.append(i[0])
+                d_hash.append(i[1])
+                d_energy.append(i[2])
+
+        if len(d_time) != 0:
+            time_list.append(d_time)
+            hashes_lst.append(d_hash)
+            energy_lst.append(d_energy)
 
     # 4a)
     t_mean = np.mean(time_list, axis=1)
@@ -1309,28 +1376,6 @@ def q4(redundancy=5, leading_zeros=10, energy=True):
                }
     res = {"times list": time_list, "hashes list": hashes_lst, "energy list": energy_lst, "details": details}
 
-    with open('filename.pickle', 'wb') as file:
-        pickle.dump(res, file, protocol=pickle.HIGHEST_PROTOCOL)
-
-    return time_list, hashes_lst, energy_lst, details
-
-
-def q4_display(times, hashes, energy, graph=True):
-    # 4a)
-    t_mean = np.mean(times, axis=1)
-    t_variance = np.var(times, axis=1)
-    t_std = np.std(times, axis=1)
-
-    # 4b)
-    h_mean = np.mean(hashes, axis=1)
-    h_variance = np.var(hashes, axis=1)
-    h_std = np.std(hashes, axis=1)
-
-    # 4c)
-    e_mean = np.mean(energy, axis=1)
-    e_variance = np.var(energy, axis=1)
-    e_std = np.std(energy, axis=1)
-
     details = {"time mean": t_mean,
                "hash number mean": h_mean,
                "energy mean": e_mean,
@@ -1346,58 +1391,67 @@ def q4_display(times, hashes, energy, graph=True):
     if graph:
         # Create a figure with 6 subplots
         fig, axs = plt.subplots(2, 3)
+        # plt.subplots_adjust(left=0.2, right=0.9, top=0.9, bottom=0.0)
+        fig.tight_layout(h_pad=3, w_pad=2)
 
         # 4a)
 
         axs[0, 0].errorbar(range(len(t_mean)), t_mean, yerr=t_std, fmt="o", capsize=5)
-        axs[0, 0].plot(t_mean)
+        axs[0, 0].semilogy(t_mean)
         axs[0, 0].set_title("time mean")
-        axs[0, 0].set_xlabel("leading Zeros")
+        axs[0, 0].set_xlabel("length of difficulty")
         axs[0, 0].set_ylabel("seconds")
 
         axs[1, 0].plot(t_variance)
         axs[1, 0].set_title("time variance")
-        axs[0, 0].set_xlabel("leading Zeros")
-        axs[0, 0].set_ylabel("seconds")
+        axs[1, 0].set_xlabel("length of difficulty")
+        axs[1, 0].set_ylabel("seconds")
 
         # 4b)
 
         axs[0, 1].errorbar(range(len(h_mean)), h_mean, yerr=h_std, fmt="o", capsize=5)
-        axs[0, 1].plot(h_mean)
+        axs[0, 1].semilogy(h_mean)
         axs[0, 1].set_title("hash number mean")
-        axs[0, 0].set_xlabel("leading Zeros")
-        axs[0, 0].set_ylabel("Hashes computed")
+        axs[0, 1].set_xlabel("length of difficulty")
+        axs[0, 1].set_ylabel("Hashes computed")
 
-        axs[1, 1].plot(h_variance)
+        axs[1, 1].semilogy(h_variance)
         axs[1, 1].set_title("hash number variance")
-        axs[0, 0].set_xlabel("leading Zeros")
-        axs[0, 0].set_ylabel("Hashes computed")
+        axs[1, 1].set_xlabel("length of difficulty")
+        axs[1, 1].set_ylabel("Hashes computed")
 
         # 4c)
 
         axs[0, 2].errorbar(range(len(e_mean)), e_mean, yerr=e_std, fmt="o", capsize=5)
-        axs[0, 2].plot(e_mean)
+        axs[0, 2].semilogy(e_mean)
         axs[0, 2].set_title("energy mean")
-        axs[0, 0].set_xlabel("leading Zeros")
-        axs[0, 0].set_ylabel("KWh")
+        axs[0, 2].set_xlabel("length of difficulty")
+        axs[0, 2].set_ylabel("KWh")
 
-        axs[1, 2].plot(e_variance)
+        axs[1, 2].semilogy(e_variance)
         axs[1, 2].set_title("energy variance")
-        axs[0, 0].set_xlabel("leading Zeros")
-        axs[0, 0].set_ylabel("KWh")
+        axs[1, 2].set_xlabel("length of difficulty")
+        axs[1, 2].set_ylabel("KWh")
+
+        # add grids
+        axs[0, 0].grid(color='green', linestyle='--', linewidth=0.5)
+        axs[1, 0].grid(color='green', linestyle='--', linewidth=0.5)
+        axs[0, 1].grid(color='green', linestyle='--', linewidth=0.5)
+        axs[1, 1].grid(color='green', linestyle='--', linewidth=0.5)
+        axs[0, 2].grid(color='green', linestyle='--', linewidth=0.5)
+        axs[1, 2].grid(color='green', linestyle='--', linewidth=0.5)
 
         # Show the plot
         plt.rcParams["axes.prop_cycle"] = plt.cycler(color=[
             "#F44336", "#E91E63", "#9C27B0", "#673AB7", "#3F51B5", "#2196F3",
-            "#03A9F4", "#00BCD4", "#009688", "#4CAF50", "#8BC34A", "#CDDC39",
-            "#FFEB3B", "#FFC107", "#FF9800", "#FF5722", "#795548", "#9E9E9E",
-            "#607D8B",
         ])
 
-        plt.show()
+        plt.rcParams['figure.figsize'] = [100, 100]
+        plt.savefig(fname="graph.pdf", format="png")
+        plt.show(block=True)
 
 
-def full_transaction_addition_mine(difficulty=1):
+def fullTransactionAdditionMine(difficulty=1):
     """
     functions that shows vlidation of transactions in an added block
     :return:
@@ -1430,7 +1484,7 @@ def full_transaction_addition_mine(difficulty=1):
     return results
 
 
-def q5_create_transacitons(node):
+def q5CreateTransacitons(node):
     """
     functions that shows vlidation of transactions in an added block
     :return: average time taken to find transaction
@@ -1530,7 +1584,7 @@ def q5_create_transacitons(node):
     return t_details, transactions
 
 
-def q5_trace_transaction(node, t_h, t_t, t_id):
+def q5TraceTransaction(node, t_h, t_t, t_id):
     """
 
     :param node: node that contains a copy of the blockchain containing the transaction
@@ -1559,7 +1613,7 @@ def q5_trace_transaction(node, t_h, t_t, t_id):
     return result
 
 
-def q5_trace_all_transactions(node, transactions):
+def q5TraceAllTransactions(node, transactions):
     results = {"transaction": [],
                "sender": [],
                "average_time": []}
@@ -1583,34 +1637,56 @@ if __name__ == '__main__':
     bc = BlockChain(previous_chain=None, difficulty=1, block_length=99)
     node = Miner(chain=bc, network=network)
 
+    # !!!!Flask app!!!!
+    # uncomment below to run the questions in a more displayable format. this is up to you.
+    # although if something does not work in either way or another please do run it in the other one!
+
+    # startFlaskApp()
+
     # q2
-    # q_2a()
+    """
+    # creates the 4 users and puts their QR codes in to the workign DIR
+    # i would recommend instead running this in the flask app as it displays the QR code there.
+    q_2a()
+    """
 
     # q3
     """
+    # here dispalys a simple output of the minned genesis/ and/or regular blocks
     print(q_3a())
-    print()"""
+    print()
+    """
 
     """
     print(q_3b())
-    print()"""
+    print()
+    """
+
+    # q4
+    """
+    
+    calculate_energy = True
+    # to get a better output or results run -Question 4 stats- in the flask app
+    results = q4(redundancy=5, leading_zeros=10, energy=calculate_energy)
+    
+    #will output the graph
+    q4Display(results, graph=True, energy=calculate_energy)
+    """
 
     # q5
 
-    """    transaction_details, transactions = q5_create_transacitons(node)
-
+    """# running in the flask app will give a better visualization of output
+    
+    #first create the transactions
+    transaction_details, transactions = q5CreateTransacitons(node)
+    
+    # pick a transaction to track
     to_trace = transaction_details[list(transaction_details.keys())[0]]
-    traced = q5_trace_transaction(node, t_h=to_trace["hash"], t_id=to_trace["id"], t_t=to_trace["time"])
-
-    trace_results = q5_trace_all_transactions(node=node, transactions=transactions)"""
-
-    # q4
-    #times, hashes, energy = q4(redundancy=2, leading_zeros=5, energy=True)
-    with open('filename.pickle', 'rb') as file:
-        res = pickle.load(file)
-
-
-    q4_display(res["times list"], res["hashes list"], res["energy list"])
-
-    #app_page = AppWebpage(host_ip="0.0.0.0", port="5555", network=network)
-    #app_page.run_debug()
+    
+    # trace the transaction
+    traced = q5TraceTransaction(node, t_h=to_trace["hash"], t_id=to_trace["id"], t_t=to_trace["time"])
+    print(traced)
+    
+    # trace all transactions
+    trace_results = q5TraceAllTransactions(node=node, transactions=transactions)
+    print(trace_results)"""
